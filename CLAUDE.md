@@ -10,10 +10,29 @@ Shopify app project — built with Remix + Polaris + Prisma stack.
 - `/tester` - Principal QA Engineer / SDET — test strategy, automation, quality
 - `/team` - Triệu tập cả team để meeting/discussion (runs in forked context)
 
+## Commands (`.claude/commands/`)
+
+### Planning
+- `/kickoff` - Init app mới: research → competitors → MVP → go-to-market → roadmap (6 phases, interactive)
+- `/plan-feature` - Plan 1 feature: PM → BA → Tech Lead với stakeholder checkpoints
+
+### Development
+- `/scaffold` - Scaffold files theo conventions
+- `/db` - Prisma operations (migrate, generate, status, seed)
+- `/review` - Review code changes
+- `/check` - Full quality pipeline (typecheck, lint, test, build)
+- `/refactor` - Guided refactoring: analyze smells → plan → execute từng bước
+
+### Operations
+- `/deploy` - Pre-checks → confirm → deploy → verify
+- `/hotfix` - Investigate → diagnose → fix → test → deploy (production bugs)
+- `/status` - Project overview
+- `/onboard` - Generate onboarding guide cho dev mới hoặc quay lại project
+
 ## Dev Skills (Auto-invoked — Claude tự apply khi detect context)
 - `dev-admin` - Remix + Polaris + App Bridge 4.x patterns (admin embedded app)
 - `dev-storefront` - Preact + Theme App Extensions (customer-facing, performance-first)
-- `dev-api` - Webhooks, Prisma, BullMQ, authentication (backend)
+- `dev-api` - Webhooks, Prisma, background jobs, authentication (backend)
 - `dev-shopify` - Platform conventions: metafields, Built for Shopify criteria, API throttle handling
 - `dev-patterns` - System architecture: Atomic Design, Repository Pattern, DRY, conventions
 

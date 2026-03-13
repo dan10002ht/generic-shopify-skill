@@ -16,9 +16,9 @@ argument-hint: [API endpoint hoặc backend feature]
 | Runtime | Node.js | LTS version |
 | Framework | Remix (server-side) | Loaders/actions = API endpoints |
 | ORM | Prisma | Type-safe DB access |
-| Database | PostgreSQL | Primary data store |
-| Cache | Redis | Sessions, rate limiting, job queue |
-| Queue | BullMQ | Background jobs, webhook processing |
+| Database | SQLite → PostgreSQL | SQLite for start, PostgreSQL when scaling |
+| Queue | DB-based queue | Lightweight, no Redis dependency |
+| Cron | node-cron | In-process scheduled tasks |
 | Validation | Zod | Runtime type validation |
 | Auth | Shopify OAuth | Via `@shopify/shopify-app-remix` |
 
@@ -27,7 +27,7 @@ argument-hint: [API endpoint hoặc backend feature]
 1. **Validate at boundaries**: Zod validate mọi input (request body, query params, webhook payload)
 2. **Idempotent operations**: Webhooks có thể gửi nhiều lần → handler phải idempotent
 3. **Fail gracefully**: Return proper HTTP status codes, structured error responses
-4. **Background heavy work**: Webhook handlers respond 200 ngay, xử lý async qua BullMQ
+4. **Background heavy work**: Webhook handlers respond 200 ngay, xử lý async qua DB-based queue
 5. **Type-safe DB**: Luôn dùng Prisma typed queries, KHÔNG raw SQL trừ performance-critical
 6. **Secure by default**: HMAC validation, rate limiting, input sanitization
 
@@ -43,8 +43,9 @@ app/
 │   ├── order-processing.server.ts
 │   ├── sync.server.ts
 │   └── notification.server.ts
-├── jobs/                # BullMQ job definitions
-│   ├── queue.server.ts       # Queue setup
+├── jobs/                # Background job definitions
+│   ├── queue.server.ts       # DB-based queue setup
+│   ├── cron.server.ts        # Scheduled tasks (node-cron)
 │   ├── processOrder.ts
 │   └── syncInventory.ts
 ├── utils/
@@ -67,13 +68,15 @@ app/
 Xem chi tiết tại [patterns.md](patterns.md) bao gồm:
 - Prisma model helper pattern
 - Webhook handler pattern (HMAC + idempotency)
-- BullMQ job pattern
+- DB-based queue pattern (lightweight, no Redis)
+- Cron job pattern (node-cron)
 - API response pattern (structured errors)
 - Zod validation pattern
-- Rate limiting pattern
+- Rate limiting pattern (in-memory, no Redis)
 - App Proxy endpoint pattern
 - Transaction pattern (Prisma)
 - Structured logging pattern
+- Health check pattern (monitoring endpoint)
 
 ## Prisma Schema Conventions
 

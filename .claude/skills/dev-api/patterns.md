@@ -126,7 +126,7 @@ export const handleOrdersCreate: WebhookHandler = async ({
   });
 
   // Queue heavy processing — don't block webhook response
-  await orderQueue.add("process-order", {
+  await enqueueJob("process-order", {
     shop,
     orderId: order.id,
     orderNumber: order.order_number,
@@ -136,81 +136,143 @@ export const handleOrdersCreate: WebhookHandler = async ({
 };
 ```
 
-## 3. BullMQ Job Pattern
+## 3. DB-Based Queue Pattern (No Redis Required)
 
 ```typescript
-// jobs/queue.server.ts
-import { Queue, Worker } from "bullmq";
-import { redis } from "~/redis.server";
-
-const connection = { connection: redis };
-
-export const orderQueue = new Queue("orders", connection);
-
-// jobs/processOrder.ts
-import { type Job } from "bullmq";
+// jobs/queue.server.ts — Lightweight queue using database
 import { db } from "~/db.server";
+import { logger } from "~/utils/logger.server";
 
-interface ProcessOrderData {
-  shop: string;
-  orderId: number;
-  totalPrice: string;
-  lineItems: Array<{
-    product_id: number;
-    quantity: number;
-    price: string;
-  }>;
+// Prisma model:
+// model JobQueue {
+//   id        String   @id @default(cuid())
+//   type      String
+//   payload   Json
+//   status    JobStatus @default(PENDING)
+//   attempts  Int      @default(0)
+//   maxRetries Int     @default(3)
+//   runAt     DateTime @default(now())
+//   error     String?
+//   createdAt DateTime @default(now())
+//   updatedAt DateTime @updatedAt
+//   @@index([status, runAt])
+//   @@index([type])
+// }
+
+export async function enqueueJob(
+  type: string,
+  payload: Record<string, unknown>,
+  options?: { runAt?: Date; maxRetries?: number },
+) {
+  return db.jobQueue.create({
+    data: {
+      type,
+      payload,
+      runAt: options?.runAt ?? new Date(),
+      maxRetries: options?.maxRetries ?? 3,
+    },
+  });
 }
 
-export async function processOrderJob(
-  job: Job<ProcessOrderData>,
-) {
-  const { shop, orderId, totalPrice, lineItems } = job.data;
-
-  // Check if order already processed
-  const existing = await db.processedOrder.findUnique({
-    where: { shop_orderId: { shop, orderId: String(orderId) } },
+// Job processor — call this from cron or after webhook response
+export async function processJobs(batchSize = 10) {
+  const jobs = await db.jobQueue.findMany({
+    where: {
+      status: "PENDING",
+      runAt: { lte: new Date() },
+    },
+    orderBy: { createdAt: "asc" },
+    take: batchSize,
   });
 
-  if (existing) {
-    job.log("Order already processed, skipping");
-    return { status: "skipped", reason: "already_processed" };
-  }
+  for (const job of jobs) {
+    try {
+      await db.jobQueue.update({
+        where: { id: job.id },
+        data: { status: "PROCESSING", attempts: { increment: 1 } },
+      });
 
-  // Process order in a transaction
-  const result = await db.$transaction(async (tx) => {
-    // 1. Create processed order record
-    const record = await tx.processedOrder.create({
-      data: {
-        shop,
-        orderId: String(orderId),
-        totalPrice: parseFloat(totalPrice),
-        itemCount: lineItems.length,
-        status: "COMPLETED",
-      },
-    });
+      const handler = jobHandlers[job.type];
+      if (!handler) throw new Error(`Unknown job type: ${job.type}`);
 
-    // 2. Update related resources
-    for (const item of lineItems) {
-      await tx.productStat.upsert({
-        where: { shop_productId: { shop, productId: String(item.product_id) } },
-        create: {
-          shop,
-          productId: String(item.product_id),
-          totalSold: item.quantity,
-        },
-        update: {
-          totalSold: { increment: item.quantity },
+      await handler(job.payload as Record<string, unknown>);
+
+      await db.jobQueue.update({
+        where: { id: job.id },
+        data: { status: "COMPLETED" },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      const shouldRetry = job.attempts < job.maxRetries;
+
+      await db.jobQueue.update({
+        where: { id: job.id },
+        data: {
+          status: shouldRetry ? "PENDING" : "FAILED",
+          error: message,
+          // Exponential backoff: 30s, 2min, 8min
+          runAt: shouldRetry
+            ? new Date(Date.now() + 30_000 * Math.pow(4, job.attempts))
+            : undefined,
         },
       });
-    }
 
-    return record;
+      logger.error("job_failed", { jobId: job.id, type: job.type, error: message });
+    }
+  }
+
+  return jobs.length;
+}
+
+// Registry of job handlers
+const jobHandlers: Record<string, (payload: Record<string, unknown>) => Promise<void>> = {};
+
+export function registerJob(
+  type: string,
+  handler: (payload: Record<string, unknown>) => Promise<void>,
+) {
+  jobHandlers[type] = handler;
+}
+```
+
+## 3b. Cron Job Pattern (node-cron)
+
+```typescript
+// jobs/cron.server.ts — Scheduled tasks, no external dependencies
+import cron from "node-cron";
+import { processJobs } from "./queue.server";
+import { logger } from "~/utils/logger.server";
+
+export function startCronJobs() {
+  // Process job queue every 30 seconds
+  cron.schedule("*/30 * * * * *", async () => {
+    try {
+      const processed = await processJobs();
+      if (processed > 0) {
+        logger.info("cron_jobs_processed", { count: processed });
+      }
+    } catch (error) {
+      logger.error("cron_process_failed", {
+        error: error instanceof Error ? error.message : "Unknown",
+      });
+    }
   });
 
-  job.log(`Order processed: ${result.id}`);
-  return { status: "success", recordId: result.id };
+  // Cleanup completed jobs older than 7 days — daily at 3am
+  cron.schedule("0 3 * * *", async () => {
+    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const { count } = await db.jobQueue.deleteMany({
+      where: { status: "COMPLETED", updatedAt: { lt: cutoff } },
+    });
+    logger.info("cron_cleanup", { deletedJobs: count });
+  });
+
+  logger.info("cron_started", { jobs: ["process-queue", "cleanup"] });
 }
+
+// Call in server entry point:
+// startCronJobs();
+```
 ```
 
 ## 4. API Response Pattern
@@ -312,46 +374,51 @@ export function validateFormData<T extends z.ZodType>(
 }
 ```
 
-## 6. Rate Limiting Pattern
+## 6. Rate Limiting Pattern (In-Memory, No Redis)
 
 ```typescript
-// utils/rateLimit.server.ts
-import { redis } from "~/redis.server";
+// utils/rateLimit.server.ts — Simple in-memory rate limiter
+// Works for single-instance deployments (sufficient for solo dev)
 
-interface RateLimitResult {
-  allowed: boolean;
-  remaining: number;
+interface RateLimitEntry {
+  count: number;
   resetAt: number;
 }
 
-export async function checkRateLimit(
+const store = new Map<string, RateLimitEntry>();
+
+// Cleanup expired entries every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of store) {
+    if (entry.resetAt < now) store.delete(key);
+  }
+}, 5 * 60 * 1000);
+
+export function checkRateLimit(
   key: string,
   limit: number,
-  windowSeconds: number,
-): Promise<RateLimitResult> {
-  const now = Math.floor(Date.now() / 1000);
-  const windowKey = `ratelimit:${key}:${Math.floor(now / windowSeconds)}`;
+  windowMs: number,
+): { allowed: boolean; remaining: number } {
+  const now = Date.now();
+  const entry = store.get(key);
 
-  const count = await redis.incr(windowKey);
-  if (count === 1) {
-    await redis.expire(windowKey, windowSeconds);
+  if (!entry || entry.resetAt < now) {
+    store.set(key, { count: 1, resetAt: now + windowMs });
+    return { allowed: true, remaining: limit - 1 };
   }
 
+  entry.count++;
   return {
-    allowed: count <= limit,
-    remaining: Math.max(0, limit - count),
-    resetAt: (Math.floor(now / windowSeconds) + 1) * windowSeconds,
+    allowed: entry.count <= limit,
+    remaining: Math.max(0, limit - entry.count),
   };
 }
 
 // Usage in loader/action
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const ip = request.headers.get("x-forwarded-for") ?? "unknown";
-  const { allowed, remaining } = await checkRateLimit(
-    `api:${ip}`,
-    100,  // 100 requests
-    60,   // per 60 seconds
-  );
+  const { allowed } = checkRateLimit(`api:${ip}`, 100, 60_000);
 
   if (!allowed) {
     throw new Response("Too many requests", {
@@ -514,4 +581,55 @@ export const logger = {
 // Usage
 // logger.info("order_processed", { shop, orderId, amount });
 // logger.error("webhook_processing_failed", { shop, error: err.message });
+```
+
+## 10. Health Check Pattern
+
+```typescript
+// routes/healthcheck.tsx — Monitor app status, no auth required
+import { type LoaderFunctionArgs, json } from "@remix-run/node";
+import { db } from "~/db.server";
+
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  const checks: Record<string, { status: "ok" | "error"; latency?: number; error?: string }> = {};
+
+  // Database check
+  const dbStart = Date.now();
+  try {
+    await db.$queryRaw`SELECT 1`;
+    checks.database = { status: "ok", latency: Date.now() - dbStart };
+  } catch (error) {
+    checks.database = {
+      status: "error",
+      error: error instanceof Error ? error.message : "Unknown",
+    };
+  }
+
+  // Job queue check — any stuck jobs?
+  try {
+    const stuckJobs = await db.jobQueue.count({
+      where: {
+        status: "PROCESSING",
+        updatedAt: { lt: new Date(Date.now() - 10 * 60 * 1000) }, // > 10min
+      },
+    });
+    checks.jobQueue = {
+      status: stuckJobs > 0 ? "error" : "ok",
+      ...(stuckJobs > 0 && { error: `${stuckJobs} stuck jobs` }),
+    };
+  } catch {
+    checks.jobQueue = { status: "ok" }; // JobQueue table may not exist yet
+  }
+
+  const allHealthy = Object.values(checks).every((c) => c.status === "ok");
+
+  return json(
+    {
+      status: allHealthy ? "healthy" : "degraded",
+      timestamp: new Date().toISOString(),
+      checks,
+    },
+    { status: allHealthy ? 200 : 503 },
+  );
+};
 ```
