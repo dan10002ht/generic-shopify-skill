@@ -21,6 +21,7 @@ Shopify app project — built with Remix + Polaris + Prisma stack.
 - `/db` - Prisma operations (migrate, generate, status, seed)
 - `/review` - Review code changes
 - `/check` - Full quality pipeline (typecheck, lint, test, build)
+- `/test` - Smart test runner: targeted tests, coverage report, failure analysis
 - `/refactor` - Guided refactoring: analyze smells → plan → execute từng bước
 
 ### Operations
@@ -104,6 +105,8 @@ Rules:
 - **Coverage target**: >= 80% cho critical paths (services/, models/)
 - **Naming**: `describe("ModuleName")` → `it("should do expected behavior")`
 - **No mocks cho DB**: Dùng test database thật, không mock Prisma
+- **CI pipeline**: Xem `.claude/skills/tester/templates/ci-pipeline.yml`
+- **Test examples**: Xem `.claude/skills/tester/templates/example-*.test.*`
 
 ## Error Handling Pattern
 ```typescript

@@ -18,3 +18,9 @@
 - Mới tạo service/model → PHẢI có test
 - Fix bug → viết regression test trước khi fix
 - Refactor → đảm bảo tests pass trước và sau
+
+## See Also
+- Service test example: `.claude/skills/tester/templates/example-service.test.ts`
+- Component test example: `.claude/skills/tester/templates/example-component.test.tsx`
+- E2E test example: `.claude/skills/tester/templates/example-e2e.test.ts`
+- QA skill & templates: `.claude/skills/tester/SKILL.md`

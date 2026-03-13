@@ -24,3 +24,9 @@
 - DB-based queue (không cần Redis) — xem `jobs/queue.server.ts`
 - node-cron cho scheduled tasks — xem `jobs/cron.server.ts`
 - Upgrade lên BullMQ + Redis chỉ khi cần (>1 instance, complex retry logic)
+
+## See Also
+- Backend patterns: `.claude/skills/dev-api/patterns.md`
+- Architecture layers: `.claude/skills/dev-patterns/architecture.md`
+- Service test examples: `.claude/skills/tester/templates/example-service.test.ts`
+- Prisma schema rules: `.claude/rules/prisma-schema.md`

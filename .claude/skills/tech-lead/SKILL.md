@@ -83,6 +83,15 @@ Khi user gọi `/tech-lead`, hãy:
 - Performance optimization recommendations
 - Security audit checklist
 
+## Reference Templates
+
+- **ADR**: [reference/adr-template.md](reference/adr-template.md) — Architecture Decision Records
+- **Dependabot**: [reference/dependabot.yml](reference/dependabot.yml) — Auto-update dependencies, copy to `.github/dependabot.yml`
+- **Lighthouse CI**: [reference/lighthouserc.js](reference/lighthouserc.js) — Performance budget enforcement, copy to project root
+- **Dockerfile**: [reference/Dockerfile](reference/Dockerfile) — Multi-stage build for Remix app
+- **Docker Compose**: [reference/docker-compose.yml](reference/docker-compose.yml) — Dev environment with Phase 1/2/3 services
+- **Sentry + Logger**: [reference/sentry-setup.ts](reference/sentry-setup.ts) — Error tracking + structured JSON logging
+
 ## Recommended Stack
 
 ```

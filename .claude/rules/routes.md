@@ -21,3 +21,7 @@
 2. Parse searchParams (optional)
 3. Call model
 4. Return json
+
+## See Also
+- Admin UI patterns: `.claude/skills/dev-admin/patterns.md`
+- Server-side rules: `.claude/rules/server-code.md`

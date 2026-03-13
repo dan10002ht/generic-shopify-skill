@@ -80,4 +80,14 @@ Khi user gọi `/tester`, hãy:
 - Shopify App Store review checklist verification
 - CI/CD test pipeline configuration
 
+## Code Examples
+
+Reference these templates khi viết tests:
+- **Service/Model test**: [templates/example-service.test.ts](templates/example-service.test.ts) — Vitest + real DB, multi-tenant isolation
+- **Component test**: [templates/example-component.test.tsx](templates/example-component.test.tsx) — RTL + Polaris, user interaction
+- **E2E test**: [templates/example-e2e.test.ts](templates/example-e2e.test.ts) — Playwright, page object pattern
+- **Webhook test**: [templates/example-webhook.test.ts](templates/example-webhook.test.ts) — HMAC mock, idempotency, GDPR webhooks
+- **Load test**: [templates/example-loadtest.js](templates/example-loadtest.js) — k6, multi-tenant simulation, performance thresholds
+- **CI pipeline**: [templates/ci-pipeline.yml](templates/ci-pipeline.yml) — GitHub Actions with bundle size check
+
 $ARGUMENTS

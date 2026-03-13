@@ -1,0 +1,94 @@
+# ============================================================
+# Dependabot Configuration — Auto-update dependencies
+# ============================================================
+# Usage: Copy to .github/dependabot.yml in your project
+# Docs:  https://docs.github.com/en/code-security/dependabot
+#
+# What it does:
+# - Scans package.json weekly for outdated/vulnerable dependencies
+# - Auto-creates PRs to update them
+# - Groups minor/patch updates to reduce PR noise
+# - Labels PRs for easy filtering
+#
+# When to enable:
+# - Project has real dependencies in package.json
+# - CI pipeline is set up (so Dependabot PRs get tested)
+# ============================================================
+
+version: 2
+
+updates:
+  # --- npm dependencies ---
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Ho_Chi_Minh"
+
+    # Limit open PRs to avoid overwhelming
+    open-pull-requests-limit: 5
+
+    # Group minor + patch updates into single PR (less noise)
+    groups:
+      # Shopify packages update together (compatibility)
+      shopify:
+        patterns:
+          - "@shopify/*"
+        update-types:
+          - "minor"
+          - "patch"
+
+      # Dev tools update together
+      dev-tools:
+        patterns:
+          - "vitest"
+          - "@testing-library/*"
+          - "playwright"
+          - "@playwright/*"
+          - "eslint*"
+          - "prettier"
+          - "typescript"
+        update-types:
+          - "minor"
+          - "patch"
+
+      # All other minor/patch updates
+      minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+    # Labels for filtering in GitHub
+    labels:
+      - "dependencies"
+      - "chore"
+
+    # Auto-assign reviewers
+    # reviewers:
+    #   - "your-github-username"
+
+    # Commit message format (matches project convention)
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+
+    # Ignore major version bumps for stable packages
+    # (review these manually — breaking changes likely)
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # --- GitHub Actions ---
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "ci"
+    commit-message:
+      prefix: "chore(ci)"

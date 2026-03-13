@@ -16,3 +16,7 @@
 react, react-dom, styled-components, @emotion/react,
 tailwind-styled-components, axios, lodash, moment
 ```
+
+## See Also
+- Storefront patterns: `.claude/skills/dev-storefront/patterns.md`
+- Performance auditor: `.claude/agents/performance-auditor.md`

@@ -48,3 +48,8 @@ enum StatusName {
 - KHÔNG rename columns trực tiếp — tạo new column → migrate data → drop old
 - Luôn test migration trên copy of production data trước
 - `npx prisma migrate dev --name descriptive-name`
+
+## See Also
+- DB architect agent: `.claude/agents/db-architect.md`
+- Backend patterns: `.claude/skills/dev-api/patterns.md` (Prisma model, transaction)
+- Server-side rules: `.claude/rules/server-code.md`

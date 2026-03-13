@@ -27,6 +27,10 @@
 - KHÔNG chứa business logic — chỉ UI state/effects
 - KHÔNG import từ models, services
 
+## See Also
+- Architecture layers: `.claude/skills/dev-patterns/architecture.md`
+- Coding conventions: `.claude/skills/dev-patterns/conventions.md`
+
 ## Import Direction
 ```
 lib/     → KHÔNG import từ app code (chỉ external packages)
