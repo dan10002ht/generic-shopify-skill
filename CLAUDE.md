@@ -1,7 +1,7 @@
-# Affiliate - Shopify App Project
+# Shopify App Project
 
 ## Project Overview
-Shopify app project đang trong giai đoạn research & planning.
+Shopify app project — built with Remix + Polaris + Prisma stack.
 
 ## Team Structure (Skills: `.claude/skills/`)
 - `/pm` - CPO / Senior Product Manager (C-level) — strategy, roadmap, prioritization
@@ -17,6 +17,55 @@ Shopify app project đang trong giai đoạn research & planning.
 - `dev-shopify` - Platform conventions: metafields, Built for Shopify criteria, API throttle handling
 - `dev-patterns` - System architecture: Atomic Design, Repository Pattern, DRY, conventions
 
+## Workflow Rules
+
+### Development Workflow
+1. **Understand first**: Đọc code liên quan trước khi sửa. Không đoán.
+2. **Plan before code**: Với task > 30 phút, tạo plan trước khi implement
+3. **Small commits**: Mỗi commit chỉ chứa 1 logical change
+4. **Test alongside code**: Viết/update test cùng lúc với code, không để sau
+5. **Review before done**: Chạy `/simplify` sau khi hoàn thành feature
+
+### Context Loading Strategy
+Khi bắt đầu task mới, Claude nên:
+1. Đọc CLAUDE.md (auto-loaded)
+2. Check memory cho relevant context
+3. Đọc files liên quan trực tiếp đến task
+4. Chỉ load dev skills khi thực sự cần (không load all)
+
+## Git Conventions
+
+### Branch Naming
+```
+feat/short-description     # New feature
+fix/short-description      # Bug fix
+refactor/short-description # Refactoring
+chore/short-description    # Maintenance, deps, config
+docs/short-description     # Documentation only
+```
+
+### Commit Messages
+Format: `<type>(<scope>): <description>`
+
+```
+feat(products): add bulk import from CSV
+fix(webhook): handle duplicate order events
+refactor(models): extract shared validation logic
+chore(deps): upgrade prisma to 6.x
+test(billing): add subscription lifecycle tests
+```
+
+Rules:
+- Viết bằng tiếng Anh, lowercase, no period at end
+- Dòng đầu <= 72 chars
+- Body (optional): explain "why", not "what"
+- Scope = module/area affected
+
+### PR Conventions
+- Title: same format as commit message
+- Body: Summary (bullet points) + Test plan
+- Squash merge to main
+
 ## Core Coding Rules (ALWAYS apply)
 1. **Atomic Design**: Components tổ chức theo Atoms → Molecules → Organisms → Templates → Pages
 2. **Repository Pattern**: Data access (models/) → Business logic (services/) → Routes (loaders/actions)
@@ -29,16 +78,60 @@ Shopify app project đang trong giai đoạn research & planning.
 9. **Immutable by Default**: `const`, `readonly`, avoid mutation
 10. **Server-first**: Fetch data trong loader, mutate trong action — minimize client state
 
-## Tech Stack (Planned)
+## Testing Standards
+- **Unit tests**: Vitest — mọi service, model, utility function
+- **Component tests**: React Testing Library — interaction flows
+- **E2E tests**: Playwright — critical user journeys
+- **Coverage target**: >= 80% cho critical paths (services/, models/)
+- **Naming**: `describe("ModuleName")` → `it("should do expected behavior")`
+- **No mocks cho DB**: Dùng test database thật, không mock Prisma
+
+## Error Handling Pattern
+```typescript
+// ✅ Early return, specific errors
+export async function getResource(id: string) {
+  const resource = await db.resource.findUnique({ where: { id } });
+  if (!resource) {
+    throw new NotFoundError(`Resource ${id} not found`);
+  }
+  return resource;
+}
+
+// ❌ Don't: generic try-catch wrapping everything
+```
+
+## File Naming Conventions
+```
+components/atoms/Button.tsx          # PascalCase for components
+models/product.server.ts             # camelCase.server.ts for server-only
+services/order.server.ts             # camelCase.server.ts
+hooks/useResourceData.ts             # useXxx for hooks
+utils/format-currency.ts             # kebab-case for utilities
+types/product.ts                     # camelCase for type files
+routes/app.products.$id.tsx          # Remix flat route convention
+```
+
+## Tech Stack (Planned — Cost-Optimized Solo Dev)
 - **Framework**: Remix (Shopify App Template)
 - **UI**: Polaris + App Bridge 4.x
 - **Storefront**: Preact (lightweight)
 - **Language**: TypeScript (strict mode)
 - **ORM**: Prisma
-- **Database**: PostgreSQL
-- **Cache**: Redis
-- **Deployment**: TBD (Fly.io / Railway / AWS)
+- **Database**: SQLite (dev/start) → PostgreSQL (khi cần scale)
+- **Queue**: DB-based queue (không cần Redis) → BullMQ khi cần
+- **Cron**: node-cron (in-process scheduled tasks)
+- **Testing**: Vitest + RTL + Playwright
+- **Deployment**: Railway / Fly.io (single instance ~$5-10/mo)
+
+### Scale Path
+```
+Phase 1 (MVP):     SQLite + DB queue + node-cron     → $5-10/mo
+Phase 2 (Growth):  PostgreSQL + DB queue              → $15-20/mo
+Phase 3 (Scale):   PostgreSQL + Redis + BullMQ        → $30-50/mo
+```
+Chỉ upgrade khi có pain point thực tế, không optimize sớm.
 
 ## Language
 - Team communication: Tiếng Việt
 - Technical terms: English
+- Code, comments, commit messages: English

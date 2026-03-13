@@ -3,20 +3,20 @@
 ## 1. Prisma Model Helper Pattern
 
 ```typescript
-// models/campaign.server.ts
+// models/resource.server.ts
 import { type Prisma } from "@prisma/client";
 import { db } from "~/db.server";
 
 // Type-safe query helpers — thin layer, no business logic
 
-export function getCampaigns(shop: string, options?: {
-  status?: CampaignStatus;
+export function getResources(shop: string, options?: {
+  status?: ResourceStatus;
   page?: number;
   limit?: number;
 }) {
   const { status, page = 1, limit = 25 } = options ?? {};
 
-  return db.campaign.findMany({
+  return db.resource.findMany({
     where: {
       shop,
       deletedAt: null, // Always exclude soft-deleted
@@ -26,13 +26,13 @@ export function getCampaigns(shop: string, options?: {
     take: limit,
     skip: (page - 1) * limit,
     include: {
-      _count: { select: { affiliates: true } },
+      _count: { select: { items: true } },
     },
   });
 }
 
-export function getCampaignBySlug(shop: string, slug: string) {
-  return db.campaign.findUnique({
+export function getResourceBySlug(shop: string, slug: string) {
+  return db.resource.findUnique({
     where: {
       shop_slug: { shop, slug },
       deletedAt: null,
@@ -40,14 +40,14 @@ export function getCampaignBySlug(shop: string, slug: string) {
   });
 }
 
-export function createCampaign(
-  data: Prisma.CampaignCreateInput,
+export function createResource(
+  data: Prisma.ResourceCreateInput,
 ) {
-  return db.campaign.create({ data });
+  return db.resource.create({ data });
 }
 
-export function softDeleteCampaign(id: string, shop: string) {
-  return db.campaign.update({
+export function softDeleteResource(id: string, shop: string) {
+  return db.resource.update({
     where: { id, shop },
     data: { deletedAt: new Date(), status: "ARCHIVED" },
   });
@@ -60,7 +60,7 @@ export function softDeleteCampaign(id: string, shop: string) {
 // webhooks/orders-create.ts
 import { type WebhookHandler } from "~/webhooks";
 import { db } from "~/db.server";
-import { commissionQueue } from "~/jobs/queue.server";
+import { orderQueue } from "~/jobs/queue.server";
 import { z } from "zod";
 
 const OrderWebhookSchema = z.object({
@@ -126,13 +126,12 @@ export const handleOrdersCreate: WebhookHandler = async ({
   });
 
   // Queue heavy processing — don't block webhook response
-  await commissionQueue.add("calculate-commission", {
+  await orderQueue.add("process-order", {
     shop,
     orderId: order.id,
     orderNumber: order.order_number,
     totalPrice: order.total_price,
     lineItems: order.line_items,
-    noteAttributes: order.note_attributes,
   });
 };
 ```
@@ -146,13 +145,13 @@ import { redis } from "~/redis.server";
 
 const connection = { connection: redis };
 
-export const commissionQueue = new Queue("commission", connection);
+export const orderQueue = new Queue("orders", connection);
 
-// jobs/calculateCommission.ts
+// jobs/processOrder.ts
 import { type Job } from "bullmq";
 import { db } from "~/db.server";
 
-interface CalculateCommissionData {
+interface ProcessOrderData {
   shop: string;
   orderId: number;
   totalPrice: string;
@@ -161,56 +160,56 @@ interface CalculateCommissionData {
     quantity: number;
     price: string;
   }>;
-  noteAttributes?: Array<{ name: string; value: string }>;
 }
 
-export async function processCommissionJob(
-  job: Job<CalculateCommissionData>,
+export async function processOrderJob(
+  job: Job<ProcessOrderData>,
 ) {
-  const { shop, orderId, totalPrice, noteAttributes } = job.data;
+  const { shop, orderId, totalPrice, lineItems } = job.data;
 
-  // Extract affiliate code from note attributes
-  const refCode = noteAttributes?.find(
-    (attr) => attr.name === "ref",
-  )?.value;
-
-  if (!refCode) {
-    job.log("No referral code found, skipping");
-    return { status: "skipped", reason: "no_referral_code" };
-  }
-
-  // Find affiliate and campaign
-  const affiliate = await db.affiliate.findFirst({
-    where: { shop, code: refCode, status: "ACTIVE" },
-    include: { campaign: true },
+  // Check if order already processed
+  const existing = await db.processedOrder.findUnique({
+    where: { shop_orderId: { shop, orderId: String(orderId) } },
   });
 
-  if (!affiliate || !affiliate.campaign) {
-    job.log(`Affiliate not found for code: ${refCode}`);
-    return { status: "skipped", reason: "affiliate_not_found" };
+  if (existing) {
+    job.log("Order already processed, skipping");
+    return { status: "skipped", reason: "already_processed" };
   }
 
-  // Calculate commission in a transaction
-  const commission = await db.$transaction(async (tx) => {
-    const amount =
-      parseFloat(totalPrice) *
-      (Number(affiliate.campaign.commissionRate) / 100);
-
-    return tx.commission.create({
+  // Process order in a transaction
+  const result = await db.$transaction(async (tx) => {
+    // 1. Create processed order record
+    const record = await tx.processedOrder.create({
       data: {
         shop,
-        affiliateId: affiliate.id,
-        campaignId: affiliate.campaignId,
         orderId: String(orderId),
-        orderTotal: parseFloat(totalPrice),
-        amount,
-        status: "PENDING",
+        totalPrice: parseFloat(totalPrice),
+        itemCount: lineItems.length,
+        status: "COMPLETED",
       },
     });
+
+    // 2. Update related resources
+    for (const item of lineItems) {
+      await tx.productStat.upsert({
+        where: { shop_productId: { shop, productId: String(item.product_id) } },
+        create: {
+          shop,
+          productId: String(item.product_id),
+          totalSold: item.quantity,
+        },
+        update: {
+          totalSold: { increment: item.quantity },
+        },
+      });
+    }
+
+    return record;
   });
 
-  job.log(`Commission created: ${commission.id}, amount: ${commission.amount}`);
-  return { status: "success", commissionId: commission.id };
+  job.log(`Order processed: ${result.id}`);
+  return { status: "success", recordId: result.id };
 }
 ```
 
@@ -256,7 +255,7 @@ export function apiError(
 export const action = async ({ request }: ActionFunctionArgs) => {
   try {
     // ... business logic
-    return apiSuccess({ campaign });
+    return apiSuccess({ resource });
   } catch (error) {
     if (error instanceof AppError) {
       return apiError(error.code, error.message, error.statusCode);
@@ -290,18 +289,18 @@ const pagination = z.object({
 });
 
 // Feature-specific schemas
-export const CreateCampaignSchema = z.object({
+export const CreateResourceSchema = z.object({
   name: z.string().min(1).max(255).trim(),
   slug: z
     .string()
     .min(1)
     .max(100)
     .regex(/^[a-z0-9-]+$/, "Slug must be lowercase alphanumeric with hyphens"),
-  commissionRate: z.coerce.number().min(0).max(100),
+  description: z.string().max(1000).optional(),
   status: z.enum(["DRAFT", "ACTIVE"]).default("DRAFT"),
 });
 
-export const UpdateCampaignSchema = CreateCampaignSchema.partial();
+export const UpdateResourceSchema = CreateResourceSchema.partial();
 
 // Validate request helper
 export function validateFormData<T extends z.ZodType>(
@@ -380,25 +379,22 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const action = url.searchParams.get("action");
 
   switch (action) {
-    case "get-referral-code": {
-      const customerId = url.searchParams.get("customer_id");
-      if (!customerId) {
-        return json({ error: "Missing customer_id" }, { status: 400 });
-      }
-      const affiliate = await db.affiliate.findFirst({
-        where: { shop: session.shop, customerId },
+    case "get-settings": {
+      const settings = await db.appSetting.findFirst({
+        where: { shop: session.shop },
       });
-      return json({ code: affiliate?.code ?? null });
+      return json({ settings: settings?.config ?? {} });
     }
 
-    case "track-click": {
-      const code = url.searchParams.get("code");
-      if (code) {
+    case "track-event": {
+      const eventType = url.searchParams.get("type");
+      const resourceId = url.searchParams.get("resource_id");
+      if (eventType && resourceId) {
         await db.trackingEvent.create({
           data: {
             shop: session.shop,
-            type: "CLICK",
-            affiliateCode: code,
+            type: eventType,
+            resourceId,
             ip: request.headers.get("x-forwarded-for"),
             userAgent: request.headers.get("user-agent"),
           },
@@ -416,59 +412,59 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 ## 8. Prisma Transaction Pattern
 
 ```typescript
-// services/payout.server.ts
+// services/batch-processing.server.ts
 import { db } from "~/db.server";
 import { AppError } from "~/utils/errors.server";
 
-export async function processPayoutBatch(
+export async function processBatch(
   shop: string,
-  affiliateId: string,
+  resourceId: string,
 ) {
   return db.$transaction(async (tx) => {
-    // 1. Lock and get pending commissions
-    const commissions = await tx.commission.findMany({
+    // 1. Get pending items
+    const items = await tx.item.findMany({
       where: {
         shop,
-        affiliateId,
-        status: "APPROVED",
-        payoutId: null,
+        resourceId,
+        status: "PENDING",
+        batchId: null,
       },
       orderBy: { createdAt: "asc" },
     });
 
-    if (commissions.length === 0) {
-      throw new AppError("NO_COMMISSIONS", "No approved commissions to pay");
+    if (items.length === 0) {
+      throw new AppError("NO_ITEMS", "No pending items to process");
     }
 
-    // 2. Calculate total
-    const totalAmount = commissions.reduce(
-      (sum, c) => sum + Number(c.amount),
+    // 2. Calculate totals
+    const totalAmount = items.reduce(
+      (sum, item) => sum + Number(item.amount),
       0,
     );
 
-    // 3. Create payout record
-    const payout = await tx.payout.create({
+    // 3. Create batch record
+    const batch = await tx.batch.create({
       data: {
         shop,
-        affiliateId,
+        resourceId,
         amount: totalAmount,
-        commissionCount: commissions.length,
-        status: "PENDING",
+        itemCount: items.length,
+        status: "PROCESSING",
       },
     });
 
-    // 4. Link commissions to payout
-    await tx.commission.updateMany({
+    // 4. Link items to batch
+    await tx.item.updateMany({
       where: {
-        id: { in: commissions.map((c) => c.id) },
+        id: { in: items.map((i) => i.id) },
       },
       data: {
-        payoutId: payout.id,
-        status: "PAID",
+        batchId: batch.id,
+        status: "PROCESSED",
       },
     });
 
-    return payout;
+    return batch;
   });
 }
 ```
@@ -491,7 +487,7 @@ function log(entry: LogEntry) {
   const output = {
     ...entry,
     timestamp: new Date().toISOString(),
-    service: "affiliate-app",
+    service: "shopify-app",
   };
 
   switch (entry.level) {
@@ -516,6 +512,6 @@ export const logger = {
 };
 
 // Usage
-// logger.info("commission_created", { shop, affiliateId, amount });
+// logger.info("order_processed", { shop, orderId, amount });
 // logger.error("webhook_processing_failed", { shop, error: err.message });
 ```

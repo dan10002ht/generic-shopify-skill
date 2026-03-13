@@ -12,14 +12,27 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   const response = await admin.graphql(`
     #graphql
-    query GetCampaigns($first: Int!, $after: String) {
-      # Use app data proxy or custom backend
+    query GetProducts($first: Int!, $after: String) {
+      products(first: $first, after: $after) {
+        edges {
+          node {
+            id
+            title
+            status
+          }
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+      }
     }
-  `);
+  `, { variables: { first: 25 } });
 
   const data = await response.json();
   return json({
-    campaigns: data.data,
+    items: data.data.products.edges.map((e: any) => e.node),
+    pageInfo: data.data.products.pageInfo,
     shop: session.shop,
   });
 };
@@ -31,17 +44,17 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 import { json, type ActionFunctionArgs } from "@remix-run/node";
 import { z } from "zod";
 
-const CreateCampaignSchema = z.object({
+const CreateResourceSchema = z.object({
   name: z.string().min(1, "Name is required").max(255),
-  commissionRate: z.coerce.number().min(0).max(100),
-  status: z.enum(["active", "draft", "paused"]),
+  description: z.string().max(1000).optional(),
+  status: z.enum(["active", "draft", "archived"]),
 });
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
 
   const formData = await request.formData();
-  const parsed = CreateCampaignSchema.safeParse(
+  const parsed = CreateResourceSchema.safeParse(
     Object.fromEntries(formData)
   );
 
@@ -53,17 +66,17 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   try {
-    const campaign = await db.campaign.create({
+    const resource = await db.resource.create({
       data: {
         ...parsed.data,
         shopId: session.shop,
       },
     });
 
-    return json({ campaign, success: true });
+    return json({ resource, success: true });
   } catch (error) {
     return json(
-      { errors: { form: ["Failed to create campaign"] } },
+      { errors: { form: ["Failed to create resource"] } },
       { status: 500 }
     );
   }
@@ -86,8 +99,8 @@ import {
 import { useNavigation } from "@remix-run/react";
 import { TitleBar } from "@shopify/app-bridge-react";
 
-export default function CampaignsPage() {
-  const { campaigns } = useLoaderData<typeof loader>();
+export default function ResourceListPage() {
+  const { items } = useLoaderData<typeof loader>();
   const navigation = useNavigation();
   const isLoading = navigation.state === "loading";
 
@@ -107,9 +120,9 @@ export default function CampaignsPage() {
 
   return (
     <Page>
-      <TitleBar title="Campaigns">
-        <button variant="primary" onClick={() => navigate("/app/campaigns/new")}>
-          Create campaign
+      <TitleBar title="Resources">
+        <button variant="primary" onClick={() => navigate("/app/resources/new")}>
+          Create resource
         </button>
       </TitleBar>
       <Layout>
@@ -257,7 +270,7 @@ function SaveButton() {
 
   useEffect(() => {
     if (fetcher.data?.success) {
-      shopify.toast.show("Campaign saved successfully");
+      shopify.toast.show("Saved successfully");
     }
   }, [fetcher.data]);
 
@@ -293,26 +306,26 @@ function SettingsPage() {
 import { IndexTable, Pagination } from "@shopify/polaris";
 import { useSearchParams } from "@remix-run/react";
 
-function CampaignList() {
-  const { campaigns, pageInfo } = useLoaderData<typeof loader>();
+function ResourceList() {
+  const { items, pageInfo } = useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
 
   return (
     <>
       <IndexTable
-        resourceName={{ singular: "campaign", plural: "campaigns" }}
-        itemCount={campaigns.length}
+        resourceName={{ singular: "item", plural: "items" }}
+        itemCount={items.length}
         headings={[
           { title: "Name" },
           { title: "Status" },
-          { title: "Commission" },
+          { title: "Created" },
         ]}
       >
-        {campaigns.map((campaign, index) => (
-          <IndexTable.Row id={campaign.id} key={campaign.id} position={index}>
-            <IndexTable.Cell>{campaign.name}</IndexTable.Cell>
-            <IndexTable.Cell>{campaign.status}</IndexTable.Cell>
-            <IndexTable.Cell>{campaign.commissionRate}%</IndexTable.Cell>
+        {items.map((item, index) => (
+          <IndexTable.Row id={item.id} key={item.id} position={index}>
+            <IndexTable.Cell>{item.name}</IndexTable.Cell>
+            <IndexTable.Cell>{item.status}</IndexTable.Cell>
+            <IndexTable.Cell>{item.createdAt}</IndexTable.Cell>
           </IndexTable.Row>
         ))}
       </IndexTable>
@@ -337,12 +350,12 @@ function CampaignList() {
 ```typescript
 import { IndexTable, useIndexResourceState } from "@shopify/polaris";
 
-function CampaignList() {
-  const { campaigns } = useLoaderData<typeof loader>();
+function ResourceList() {
+  const { items } = useLoaderData<typeof loader>();
   const fetcher = useFetcher();
 
   const { selectedResources, allResourcesSelected, handleSelectionChange } =
-    useIndexResourceState(campaigns);
+    useIndexResourceState(items);
 
   const promotedBulkActions = [
     {
@@ -367,8 +380,8 @@ function CampaignList() {
 
   return (
     <IndexTable
-      resourceName={{ singular: "campaign", plural: "campaigns" }}
-      itemCount={campaigns.length}
+      resourceName={{ singular: "item", plural: "items" }}
+      itemCount={items.length}
       selectedItemsCount={
         allResourcesSelected ? "All" : selectedResources.length
       }

@@ -4,18 +4,18 @@
 
 | What | Convention | Example |
 |------|-----------|---------|
-| **Files — components** | PascalCase | `StatusBadge.tsx`, `CampaignTable.tsx` |
+| **Files — components** | PascalCase | `StatusBadge.tsx`, `ResourceTable.tsx` |
 | **Files — utils/hooks** | camelCase | `formatCurrency.ts`, `useDebounce.ts` |
-| **Files — models/services** | camelCase + `.server.ts` | `campaign.server.ts` |
-| **Files — routes** | dot-separated | `app.campaigns.$id.tsx` |
-| **Files — types** | camelCase | `campaign.ts`, `api.ts` |
-| **Files — tests** | `.test.ts` suffix | `campaign.server.test.ts` |
+| **Files — models/services** | camelCase + `.server.ts` | `resource.server.ts` |
+| **Files — routes** | dot-separated | `app.resources.$id.tsx` |
+| **Files — types** | camelCase | `resource.ts`, `api.ts` |
+| **Files — tests** | `.test.ts` suffix | `resource.server.test.ts` |
 | **Components** | PascalCase | `export function StatusBadge()` |
-| **Hooks** | `use` prefix | `useAffiliate()`, `useDebounce()` |
-| **Constants** | SCREAMING_SNAKE | `MAX_COMMISSION_RATE`, `API_VERSION` |
+| **Hooks** | `use` prefix | `useResource()`, `useDebounce()` |
+| **Constants** | SCREAMING_SNAKE | `MAX_ITEMS_PER_PAGE`, `API_VERSION` |
 | **Enums (Prisma)** | PascalCase members | `ACTIVE`, `DRAFT`, `PAUSED` |
-| **Types/Interfaces** | PascalCase | `Campaign`, `CreateCampaignInput` |
-| **Variables/functions** | camelCase | `campaignList`, `calculateCommission` |
+| **Types/Interfaces** | PascalCase | `Resource`, `CreateResourceInput` |
+| **Variables/functions** | camelCase | `resourceList`, `processOrder` |
 | **Boolean vars** | `is`/`has`/`can` prefix | `isActive`, `hasPermission`, `canEdit` |
 | **Event handlers** | `handle` prefix | `handleSubmit`, `handleDelete` |
 | **Callbacks (props)** | `on` prefix | `onSave`, `onDelete`, `onChange` |
@@ -26,18 +26,18 @@
 Liên quan → cùng folder. Không tách test/type/style ra folder riêng.
 
 ✅ Colocated:
-components/organisms/CampaignTable/
-├── CampaignTable.tsx
-├── CampaignTable.test.tsx
+components/organisms/ResourceTable/
+├── ResourceTable.tsx
+├── ResourceTable.test.tsx
 └── index.ts                    # re-export
 
 ✅ Simple (no test yet):
 components/atoms/StatusBadge.tsx  # Single file OK for atoms
 
 ❌ Anti-pattern:
-components/CampaignTable.tsx
-__tests__/CampaignTable.test.tsx  # Tách ra folder khác
-types/CampaignTable.ts            # Tách types ra folder khác
+components/ResourceTable.tsx
+__tests__/ResourceTable.test.tsx  # Tách ra folder khác
+types/ResourceTable.ts            # Tách types ra folder khác
 ```
 
 ## DRY Rules
@@ -77,7 +77,7 @@ serve mục đích khác nhau. Similar code ≠ Duplicate code.
   - Route loader/action boilerplate (auth + validation pattern)
 
 ❌ KHÔNG OK to duplicate:
-  - Business rules (commission calculation, eligibility checks)
+  - Business rules (calculation logic, eligibility checks)
   - Validation schemas (Zod schemas)
   - API query patterns (GraphQL queries)
   - Component logic (state management, event handlers)
@@ -88,28 +88,28 @@ serve mục đích khác nhau. Similar code ≠ Duplicate code.
 ### Early Return
 ```typescript
 // ✅ Early return — flat, readable
-export async function getCampaign(id: string, shop: string) {
-  const campaign = await campaignModel.getCampaignById(id, shop);
-  if (!campaign) {
-    throw new AppError("NOT_FOUND", "Campaign not found", 404);
+export async function getResource(id: string, shop: string) {
+  const resource = await resourceModel.getResourceById(id, shop);
+  if (!resource) {
+    throw new AppError("NOT_FOUND", "Resource not found", 404);
   }
-  if (campaign.status === "ARCHIVED") {
-    throw new AppError("ARCHIVED", "Campaign is archived", 410);
+  if (resource.status === "ARCHIVED") {
+    throw new AppError("ARCHIVED", "Resource is archived", 410);
   }
-  return campaign;
+  return resource;
 }
 
 // ❌ Nested — hard to read
-export async function getCampaign(id: string, shop: string) {
-  const campaign = await campaignModel.getCampaignById(id, shop);
-  if (campaign) {
-    if (campaign.status !== "ARCHIVED") {
-      return campaign;
+export async function getResource(id: string, shop: string) {
+  const resource = await resourceModel.getResourceById(id, shop);
+  if (resource) {
+    if (resource.status !== "ARCHIVED") {
+      return resource;
     } else {
-      throw new AppError("ARCHIVED", "Campaign is archived", 410);
+      throw new AppError("ARCHIVED", "Resource is archived", 410);
     }
   } else {
-    throw new AppError("NOT_FOUND", "Campaign not found", 404);
+    throw new AppError("NOT_FOUND", "Resource not found", 404);
   }
 }
 ```
@@ -141,37 +141,37 @@ import { z } from "zod";
 
 // 3. Internal — services/models (server)
 import { authenticate } from "~/shopify.server";
-import * as campaignModel from "~/models/campaign.server";
+import * as resourceModel from "~/models/resource.server";
 
 // 4. Internal — components (from atoms → organisms)
 import { StatusBadge } from "~/components/atoms/StatusBadge";
-import { CampaignTable } from "~/components/organisms/CampaignTable";
+import { ResourceTable } from "~/components/organisms/ResourceTable";
 
 // 5. Internal — hooks, utils, types
 import { useDebounce } from "~/hooks/useDebounce";
 import { formatDate } from "~/utils/format";
-import type { Campaign } from "~/types/campaign";
+import type { Resource } from "~/types/resource";
 ```
 
 ## TypeScript Rules
 
 ```typescript
 // ✅ DO
-const campaigns: Campaign[] = [];           // Explicit types at boundaries
-function calculate(rate: number): number {} // Function signatures
-type Props = { name: string };              // Component props as type
-export type { Campaign };                   // Re-export types
+const resources: Resource[] = [];            // Explicit types at boundaries
+function calculate(rate: number): number {}  // Function signatures
+type Props = { name: string };               // Component props as type
+export type { Resource };                    // Re-export types
 
 // ❌ DON'T
 const x: any = {};                         // No any
-const data = response as Campaign;         // No type assertions (use type guards)
+const data = response as Resource;         // No type assertions (use type guards)
 // @ts-ignore                              // No suppression comments
 ```
 
 ### Type Guards over Assertions
 ```typescript
 // ✅ Type guard — runtime safe
-function isCampaign(data: unknown): data is Campaign {
+function isResource(data: unknown): data is Resource {
   return (
     typeof data === "object" &&
     data !== null &&
@@ -181,22 +181,22 @@ function isCampaign(data: unknown): data is Campaign {
 }
 
 // ❌ Type assertion — unsafe
-const campaign = data as Campaign;
+const resource = data as Resource;
 ```
 
 ## Immutability
 
 ```typescript
 // ✅ Immutable patterns
-const updated = { ...campaign, status: "ACTIVE" };
-const filtered = campaigns.filter((c) => c.status === "ACTIVE");
-const mapped = campaigns.map((c) => ({ ...c, display: true }));
+const updated = { ...item, status: "ACTIVE" };
+const filtered = items.filter((i) => i.status === "ACTIVE");
+const mapped = items.map((i) => ({ ...i, display: true }));
 
 // ❌ Mutation
-campaign.status = "ACTIVE";
-campaigns.push(newCampaign);
-campaigns.sort((a, b) => a.name.localeCompare(b.name)); // Mutates in-place
+item.status = "ACTIVE";
+items.push(newItem);
+items.sort((a, b) => a.name.localeCompare(b.name)); // Mutates in-place
 
 // ✅ Sort without mutation
-const sorted = [...campaigns].sort((a, b) => a.name.localeCompare(b.name));
+const sorted = [...items].sort((a, b) => a.name.localeCompare(b.name));
 ```

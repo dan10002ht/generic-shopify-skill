@@ -23,11 +23,11 @@
 ```
 Route loader cần data đơn giản?
   → Route → Model (skip service)
-  → Ví dụ: getCampaigns(shop) trong loader
+  → Ví dụ: getResources(shop) trong loader
 
 Route action cần business logic phức tạp?
   → Route → Service → Model(s)
-  → Ví dụ: processCommission() gọi nhiều models + side effects
+  → Ví dụ: processOrder() gọi nhiều models + side effects
 
 Rule of thumb:
   - 1 model call = skip service
@@ -38,7 +38,7 @@ Rule of thumb:
 ## Model Layer (Repository Pattern)
 
 ```typescript
-// models/campaign.server.ts
+// models/resource.server.ts
 // RULES:
 //   - Chỉ CRUD operations, không business logic
 //   - Mọi function nhận `shop` param (multi-tenant)
@@ -47,15 +47,15 @@ Rule of thumb:
 //   - Mỗi file = 1 Prisma model
 
 import { db } from "~/db.server";
-import { type Prisma, type Campaign } from "@prisma/client";
+import { type Prisma, type Resource } from "@prisma/client";
 
 // READ
-export function getCampaigns(shop: string, options?: {
-  status?: Campaign["status"];
+export function getResources(shop: string, options?: {
+  status?: Resource["status"];
   limit?: number;
   cursor?: string;
 }) {
-  return db.campaign.findMany({
+  return db.resource.findMany({
     where: { shop, deletedAt: null, ...(options?.status && { status: options.status }) },
     take: options?.limit ?? 25,
     ...(options?.cursor && { skip: 1, cursor: { id: options.cursor } }),
@@ -63,22 +63,22 @@ export function getCampaigns(shop: string, options?: {
   });
 }
 
-export function getCampaignById(id: string, shop: string) {
-  return db.campaign.findFirst({ where: { id, shop, deletedAt: null } });
+export function getResourceById(id: string, shop: string) {
+  return db.resource.findFirst({ where: { id, shop, deletedAt: null } });
 }
 
 // WRITE
-export function createCampaign(data: Prisma.CampaignCreateInput) {
-  return db.campaign.create({ data });
+export function createResource(data: Prisma.ResourceCreateInput) {
+  return db.resource.create({ data });
 }
 
-export function updateCampaign(id: string, shop: string, data: Prisma.CampaignUpdateInput) {
-  return db.campaign.update({ where: { id, shop }, data });
+export function updateResource(id: string, shop: string, data: Prisma.ResourceUpdateInput) {
+  return db.resource.update({ where: { id, shop }, data });
 }
 
 // SOFT DELETE
-export function deleteCampaign(id: string, shop: string) {
-  return db.campaign.update({
+export function deleteResource(id: string, shop: string) {
+  return db.resource.update({
     where: { id, shop },
     data: { deletedAt: new Date(), status: "ARCHIVED" },
   });
@@ -88,7 +88,7 @@ export function deleteCampaign(id: string, shop: string) {
 ## Service Layer (Business Logic)
 
 ```typescript
-// services/commission.server.ts
+// services/order-processing.server.ts
 // RULES:
 //   - Orchestrate multiple models
 //   - Contain business rules & validations
@@ -96,72 +96,66 @@ export function deleteCampaign(id: string, shop: string) {
 //   - Throw AppError cho business rule violations
 //   - KHÔNG access request/response objects
 
-import * as campaignModel from "~/models/campaign.server";
-import * as affiliateModel from "~/models/affiliate.server";
-import * as commissionModel from "~/models/commission.server";
-import { commissionQueue } from "~/jobs/queue.server";
+import * as resourceModel from "~/models/resource.server";
+import * as itemModel from "~/models/item.server";
+import * as logModel from "~/models/log.server";
+import { notificationQueue } from "~/jobs/queue.server";
 import { AppError } from "~/utils/errors.server";
 import { logger } from "~/utils/logger.server";
 
-interface CalculateCommissionInput {
+interface ProcessOrderInput {
   shop: string;
   orderId: string;
   orderTotal: number;
-  affiliateCode: string;
+  resourceCode: string;
 }
 
-export async function calculateCommission(input: CalculateCommissionInput) {
-  const { shop, orderId, orderTotal, affiliateCode } = input;
+export async function processOrder(input: ProcessOrderInput) {
+  const { shop, orderId, orderTotal, resourceCode } = input;
 
-  // 1. Business rule: find active affiliate
-  const affiliate = await affiliateModel.getByCode(shop, affiliateCode);
-  if (!affiliate) {
-    throw new AppError("AFFILIATE_NOT_FOUND", "Invalid affiliate code", 404);
+  // 1. Business rule: find active resource
+  const resource = await resourceModel.getByCode(shop, resourceCode);
+  if (!resource) {
+    throw new AppError("RESOURCE_NOT_FOUND", "Invalid resource code", 404);
   }
 
-  // 2. Business rule: campaign must be active
-  const campaign = await campaignModel.getCampaignById(affiliate.campaignId, shop);
-  if (!campaign || campaign.status !== "ACTIVE") {
-    throw new AppError("CAMPAIGN_INACTIVE", "Campaign is not active", 400);
+  // 2. Business rule: resource must be active
+  if (resource.status !== "ACTIVE") {
+    throw new AppError("RESOURCE_INACTIVE", "Resource is not active", 400);
   }
 
-  // 3. Business rule: no duplicate commission for same order
-  const existing = await commissionModel.getByOrderId(shop, orderId);
+  // 3. Business rule: no duplicate processing for same order
+  const existing = await logModel.getByOrderId(shop, orderId);
   if (existing) {
-    logger.warn("commission_duplicate_skipped", { shop, orderId });
+    logger.warn("order_duplicate_skipped", { shop, orderId });
     return existing;
   }
 
-  // 4. Calculate amount
-  const amount = orderTotal * (Number(campaign.commissionRate) / 100);
-
-  // 5. Create commission record
-  const commission = await commissionModel.create({
+  // 4. Create log record
+  const logEntry = await logModel.create({
     shop,
-    affiliateId: affiliate.id,
-    campaignId: campaign.id,
+    resourceId: resource.id,
     orderId,
     orderTotal,
-    amount,
-    status: "PENDING",
+    status: "COMPLETED",
   });
 
-  // 6. Side effect: notify affiliate (async)
-  await commissionQueue.add("notify-affiliate", {
-    affiliateId: affiliate.id,
-    commissionId: commission.id,
-    amount,
+  // 5. Side effect: send notification (async)
+  await notificationQueue.add("notify-order", {
+    resourceId: resource.id,
+    logId: logEntry.id,
+    orderTotal,
   });
 
-  logger.info("commission_created", { shop, commissionId: commission.id, amount });
-  return commission;
+  logger.info("order_processed", { shop, logId: logEntry.id, orderTotal });
+  return logEntry;
 }
 ```
 
 ## Route Layer (HTTP Boundary)
 
 ```typescript
-// routes/app.campaigns.tsx
+// routes/app.resources.tsx
 // RULES:
 //   - Handle authentication (authenticate.admin)
 //   - Parse & validate request input (Zod)
@@ -173,15 +167,15 @@ export async function calculateCommission(input: CalculateCommissionInput) {
 import { json, redirect, type LoaderFunctionArgs, type ActionFunctionArgs } from "@remix-run/node";
 import { useLoaderData, useActionData } from "@remix-run/react";
 import { authenticate } from "~/shopify.server";
-import { CreateCampaignSchema } from "~/utils/validation.server";
-import * as campaignModel from "~/models/campaign.server";
+import { CreateResourceSchema } from "~/utils/validation.server";
+import * as resourceModel from "~/models/resource.server";
 import { AppError } from "~/utils/errors.server";
 
 // Loader: data fetching (GET)
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
-  const campaigns = await campaignModel.getCampaigns(session.shop);
-  return json({ campaigns });
+  const resources = await resourceModel.getResources(session.shop);
+  return json({ resources });
 };
 
 // Action: mutations (POST/PUT/DELETE)
@@ -189,17 +183,17 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const formData = await request.formData();
 
-  const parsed = CreateCampaignSchema.safeParse(Object.fromEntries(formData));
+  const parsed = CreateResourceSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
     return json({ errors: parsed.error.flatten().fieldErrors }, { status: 422 });
   }
 
   try {
-    await campaignModel.createCampaign({
+    await resourceModel.createResource({
       ...parsed.data,
       shop: session.shop,
     });
-    return redirect("/app/campaigns");
+    return redirect("/app/resources");
   } catch (error) {
     if (error instanceof AppError) {
       return json({ errors: { form: [error.message] } }, { status: error.statusCode });

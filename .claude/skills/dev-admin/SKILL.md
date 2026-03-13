@@ -36,8 +36,8 @@ app/
 ├── routes/
 │   ├── app._index.tsx          # Dashboard / landing
 │   ├── app.settings.tsx        # Settings page
-│   ├── app.[resource].tsx      # Resource list (e.g., app.campaigns.tsx)
-│   ├── app.[resource].$id.tsx  # Resource detail (e.g., app.campaigns.$id.tsx)
+│   ├── app.[resource].tsx      # Resource list (e.g., app.products.tsx)
+│   ├── app.[resource].$id.tsx  # Resource detail (e.g., app.orders.$id.tsx)
 │   └── app.[resource].new.tsx  # Resource create
 ├── components/                  # Shared Polaris components
 ├── utils/                       # Helpers, validators

@@ -5,9 +5,9 @@
 ### App-owned Metafields (chỉ app đọc/ghi)
 ```
 Namespace: $app:<key>
-Ví dụ:    $app:affiliate_code
-           $app:commission_rate
-           $app:tracking_id
+Ví dụ:    $app:settings
+           $app:config
+           $app:status
 ```
 - Shopify tự reserved namespace `$app:` cho app hiện tại
 - Merchant KHÔNG thể edit trực tiếp trong admin
@@ -17,8 +17,8 @@ Ví dụ:    $app:affiliate_code
 ```
 Namespace: custom
 Key:       snake_case, descriptive
-Ví dụ:    custom.affiliate_enabled
-           custom.commission_override
+Ví dụ:    custom.display_mode
+           custom.feature_enabled
 ```
 - Merchant có thể edit trong admin UI
 - Pin metafield definition để hiện trong admin form
@@ -26,13 +26,13 @@ Ví dụ:    custom.affiliate_enabled
 ### Naming Conventions
 ```
 ✅ DO:
-  - snake_case cho keys: commission_rate, tracking_id
-  - Descriptive names: affiliate_referral_code (not ref_code)
-  - Group related keys: affiliate_code, affiliate_status, affiliate_tier
+  - snake_case cho keys: display_mode, tracking_id
+  - Descriptive names: customer_loyalty_tier (not cust_tier)
+  - Group related keys: app_status, app_config, app_display_mode
 
 ❌ DON'T:
-  - camelCase: commissionRate
-  - Abbreviations unclear: aff_cd, trk_id
+  - camelCase: displayMode
+  - Abbreviations unclear: dsp_md, trk_id
   - Generic names: data, value, info
 ```
 
@@ -40,14 +40,14 @@ Ví dụ:    custom.affiliate_enabled
 
 | Type | Use Case | Example Value |
 |------|----------|---------------|
-| `single_line_text_field` | Short text, codes | `"REF-ABC123"` |
+| `single_line_text_field` | Short text, codes | `"SKU-ABC123"` |
 | `multi_line_text_field` | Long text, descriptions | `"Terms and conditions..."` |
 | `number_integer` | Counts, IDs | `42` |
 | `number_decimal` | Rates, percentages | `"15.5"` |
 | `boolean` | Toggles, flags | `true` |
 | `date` | Dates without time | `"2025-03-15"` |
 | `date_time` | Timestamps | `"2025-03-15T10:30:00Z"` |
-| `json` | Complex structured data | `{"tier": "gold", "rate": 15}` |
+| `json` | Complex structured data | `{"tier": "gold", "score": 15}` |
 | `url` | Links | `"https://example.com"` |
 | `color` | Hex colors | `"#FF5733"` |
 | `money` | Currency amounts | `{"amount": "10.00", "currency_code": "USD"}` |
@@ -86,25 +86,21 @@ const CREATE_METAFIELD_DEFINITION = `
 await admin.graphql(CREATE_METAFIELD_DEFINITION, {
   variables: {
     definition: {
-      name: "Affiliate Code",
-      namespace: "$app:affiliate",
-      key: "code",
+      name: "Loyalty Tier",
+      namespace: "$app:loyalty",
+      key: "tier",
       type: "single_line_text_field",
-      description: "Unique affiliate referral code",
+      description: "Customer loyalty tier level",
       ownerType: "CUSTOMER",
       pin: true, // Show in admin UI
       validations: [
         {
           name: "min",
-          value: "3",
+          value: "1",
         },
         {
           name: "max",
           value: "50",
-        },
-        {
-          name: "regex",
-          value: "^[A-Z0-9-]+$",
         },
       ],
     },
@@ -135,7 +131,7 @@ const GET_CUSTOMER_METAFIELDS = `
   #graphql
   query GetCustomerMetafields($id: ID!) {
     customer(id: $id) {
-      metafields(first: 10, namespace: "$app:affiliate") {
+      metafields(first: 10, namespace: "$app:loyalty") {
         edges {
           node {
             id
@@ -178,17 +174,17 @@ await admin.graphql(SET_METAFIELDS, {
     metafields: [
       {
         ownerId: "gid://shopify/Customer/123",
-        namespace: "$app:affiliate",
-        key: "code",
-        type: "single_line_text_field",
-        value: "REF-ABC123",
-      },
-      {
-        ownerId: "gid://shopify/Customer/123",
-        namespace: "$app:affiliate",
+        namespace: "$app:loyalty",
         key: "tier",
         type: "single_line_text_field",
         value: "gold",
+      },
+      {
+        ownerId: "gid://shopify/Customer/123",
+        namespace: "$app:loyalty",
+        key: "points",
+        type: "number_integer",
+        value: "1500",
       },
     ],
   },
@@ -201,15 +197,15 @@ await admin.graphql(SET_METAFIELDS, {
 
 ```
 Metafield: Attach data lên existing resource (product, customer, order)
-  → Customer có metafield "affiliate_code"
+  → Customer có metafield "loyalty_tier"
 
 Metaobject: Tạo custom data type hoàn toàn mới
-  → "AffiliateProfile" object với nhiều fields + relationships
+  → "AppProfile" object với nhiều fields + relationships
 
 Rule of thumb:
   - 1-3 fields đơn giản → JSON metafield
   - 4+ fields, cần query/filter → Metaobject
-  - Cần relate to multiple resources → Metaobject + mixed_reference
+  - Cần relationships giữa custom data → Metaobject + mixed_reference
 ```
 
 ### Define Metaobject
@@ -234,9 +230,9 @@ const CREATE_METAOBJECT_DEFINITION = `
 await admin.graphql(CREATE_METAOBJECT_DEFINITION, {
   variables: {
     definition: {
-      type: "$app:affiliate_profile",
-      name: "Affiliate Profile",
-      description: "Affiliate partner profile and settings",
+      type: "$app:custom_profile",
+      name: "Custom Profile",
+      description: "User profile with custom settings",
       access: {
         admin: "MERCHANT_READ",        // Merchant can read in admin
         storefront: "PUBLIC_READ",     // Visible in storefront
@@ -256,12 +252,12 @@ await admin.graphql(CREATE_METAOBJECT_DEFINITION, {
           ],
         },
         {
-          key: "commission_rate",
-          name: "Commission Rate (%)",
-          type: "number_decimal",
+          key: "score",
+          name: "Score",
+          type: "number_integer",
           validations: [
             { name: "min", value: "0" },
-            { name: "max", value: "100" },
+            { name: "max", value: "10000" },
           ],
         },
         {
@@ -270,8 +266,8 @@ await admin.graphql(CREATE_METAOBJECT_DEFINITION, {
           type: "file_reference",
         },
         {
-          key: "social_links",
-          name: "Social Links",
+          key: "metadata",
+          name: "Metadata",
           type: "json",
         },
         {
@@ -287,9 +283,9 @@ await admin.graphql(CREATE_METAOBJECT_DEFINITION, {
 
 ### Query Metaobjects
 ```typescript
-const GET_AFFILIATE_PROFILES = `
+const GET_PROFILES = `
   #graphql
-  query GetAffiliateProfiles($type: String!, $first: Int!) {
+  query GetProfiles($type: String!, $first: Int!) {
     metaobjects(type: $type, first: $first) {
       edges {
         node {
@@ -308,7 +304,7 @@ const GET_AFFILIATE_PROFILES = `
 
 // Storefront API — for customer-facing pages
 const STOREFRONT_QUERY = `
-  query GetAffiliateByHandle($handle: MetaobjectHandleInput!) {
+  query GetProfileByHandle($handle: MetaobjectHandleInput!) {
     metaobject(handle: $handle) {
       fields {
         key
@@ -363,8 +359,8 @@ export async function migrateMetafields(
       .filter((c: any) => c.node.metafield?.value)
       .map((c: any) => ({
         ownerId: c.node.id,
-        namespace: "$app:affiliate",
-        key: "code",
+        namespace: "$app:config",
+        key: "migrated_value",
         type: "single_line_text_field",
         value: c.node.metafield.value,
       }));

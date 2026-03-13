@@ -47,24 +47,24 @@ Merchant không accept app làm chậm storefront. Mọi byte đều quan trọn
 extensions/
 ├── theme-app-extension/
 │   ├── assets/
-│   │   ├── affiliate-widget.js     # Bundled Preact component
-│   │   └── affiliate-widget.css    # Scoped styles
+│   │   ├── app-widget.js          # Bundled Preact component
+│   │   └── app-widget.css         # Scoped styles
 │   ├── blocks/
-│   │   ├── affiliate-link.liquid   # App Block definition
-│   │   └── referral-banner.liquid  # App Block definition
+│   │   ├── app-block.liquid       # App Block definition
+│   │   └── promo-banner.liquid    # App Block definition
 │   ├── snippets/
-│   │   └── affiliate-tracking.liquid  # Shared snippet
+│   │   └── app-tracking.liquid    # Shared snippet
 │   └── locales/
-│       └── en.default.json         # Translations
-└── src/                             # Preact source (pre-build)
+│       └── en.default.json        # Translations
+└── src/                            # Preact source (pre-build)
     ├── components/
-    │   ├── AffiliateWidget.tsx
-    │   └── ReferralBanner.tsx
+    │   ├── AppWidget.tsx
+    │   └── PromoBanner.tsx
     ├── hooks/
     │   └── useTracking.ts
     ├── utils/
     │   └── api.ts
-    └── index.tsx                    # Entry point
+    └── index.tsx                   # Entry point
 ```
 
 ## Code Patterns
@@ -85,7 +85,7 @@ Xem chi tiết tại [patterns.md](patterns.md) bao gồm:
 - Dùng Preact `h()` hoặc JSX pragma — KHÔNG React
 - Dùng Preact Signals thay vì useState cho shared state
 - Lazy load components bằng `IntersectionObserver`
-- Scope CSS bằng unique prefix (e.g., `.aff-widget__title`)
+- Scope CSS bằng unique prefix (e.g., `.app-widget__title`)
 - Dùng `<script type="module">` cho modern browsers
 - Test bundle size trước mỗi PR (`npx bundlesize`)
 - Dùng Liquid `{% schema %}` settings cho merchant customization
@@ -99,7 +99,7 @@ Xem chi tiết tại [patterns.md](patterns.md) bao gồm:
 - KHÔNG dùng `document.write`, `eval`, hoặc inline scripts
 - KHÔNG blocking render — async/defer tất cả scripts
 - KHÔNG install npm packages > 5KB cho storefront code
-- KHÔNG dùng `localStorage` cho sensitive data (affiliate tokens)
+- KHÔNG dùng `localStorage` cho sensitive data (tokens, secrets)
 - KHÔNG modify merchant's theme CSS/DOM ngoài app block
 
 ## Banned Imports (Storefront)

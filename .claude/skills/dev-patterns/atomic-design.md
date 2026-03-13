@@ -14,7 +14,7 @@ Pages (routes/app.*.tsx)
 
 ### Atoms — Smallest, no business logic
 ```
-Ví dụ: StatusBadge, CurrencyText, PercentageInput, CopyButton, AffiliateAvatar
+Ví dụ: StatusBadge, CurrencyText, PercentageInput, CopyButton, UserAvatar
 
 Rules:
   - Chỉ nhận props, không fetch data
@@ -67,7 +67,7 @@ export function CurrencyText({ amount, currency = "USD" }: CurrencyTextProps) {
 
 ### Molecules — Combine 2-3 atoms, minimal logic
 ```
-Ví dụ: CampaignCard, AffiliateRow, CommissionSummary, StatCard, FormField
+Ví dụ: ResourceCard, ItemRow, SummaryCard, StatCard, FormField
 
 Rules:
   - Combine atoms thành meaningful group
@@ -114,22 +114,21 @@ export function StatCard({ title, value, isCurrency, trend }: StatCardProps) {
 ```
 
 ```typescript
-// components/molecules/CampaignCard.tsx
+// components/molecules/ResourceCard.tsx
 import { Card, BlockStack, InlineStack, Text, Button } from "@shopify/polaris";
 import { StatusBadge } from "~/components/atoms/StatusBadge";
-import { CurrencyText } from "~/components/atoms/CurrencyText";
 
-interface CampaignCardProps {
+interface ResourceCardProps {
   name: string;
   status: "active" | "draft" | "paused" | "archived";
-  affiliateCount: number;
-  totalCommission: number;
+  itemCount: number;
+  description?: string;
   onEdit: () => void;
 }
 
-export function CampaignCard({
-  name, status, affiliateCount, totalCommission, onEdit,
-}: CampaignCardProps) {
+export function ResourceCard({
+  name, status, itemCount, description, onEdit,
+}: ResourceCardProps) {
   return (
     <Card>
       <BlockStack gap="300">
@@ -137,11 +136,11 @@ export function CampaignCard({
           <Text as="h3" variant="headingMd">{name}</Text>
           <StatusBadge status={status} />
         </InlineStack>
-        <InlineStack gap="400">
-          <Text as="p" variant="bodySm">{affiliateCount} affiliates</Text>
-          <CurrencyText amount={totalCommission} />
-        </InlineStack>
-        <Button onClick={onEdit}>Edit campaign</Button>
+        {description && (
+          <Text as="p" variant="bodySm" tone="subdued">{description}</Text>
+        )}
+        <Text as="p" variant="bodySm">{itemCount} items</Text>
+        <Button onClick={onEdit}>Edit</Button>
       </BlockStack>
     </Card>
   );
@@ -150,7 +149,7 @@ export function CampaignCard({
 
 ### Organisms — Complex sections, may have internal state
 ```
-Ví dụ: CampaignTable, AffiliateList, CommissionDashboard, OnboardingWizard
+Ví dụ: ResourceTable, ItemList, DashboardMetrics, OnboardingWizard
 
 Rules:
   - Combine molecules + atoms thành complete UI section
@@ -161,7 +160,7 @@ Rules:
 ```
 
 ```typescript
-// components/organisms/CampaignTable.tsx
+// components/organisms/ResourceTable.tsx
 import {
   IndexTable,
   useIndexResourceState,
@@ -170,33 +169,32 @@ import {
 } from "@shopify/polaris";
 import { useState, useCallback } from "react";
 import { StatusBadge } from "~/components/atoms/StatusBadge";
-import { CurrencyText } from "~/components/atoms/CurrencyText";
 
-interface Campaign {
+interface Resource {
   id: string;
   name: string;
   status: "active" | "draft" | "paused" | "archived";
-  affiliateCount: number;
-  totalCommission: number;
+  itemCount: number;
+  createdAt: string;
 }
 
-interface CampaignTableProps {
-  campaigns: Campaign[];
+interface ResourceTableProps {
+  resources: Resource[];
   onBulkActivate: (ids: string[]) => void;
   onBulkDeactivate: (ids: string[]) => void;
 }
 
-export function CampaignTable({
-  campaigns,
+export function ResourceTable({
+  resources,
   onBulkActivate,
   onBulkDeactivate,
-}: CampaignTableProps) {
+}: ResourceTableProps) {
   const [queryValue, setQueryValue] = useState("");
   const { selectedResources, allResourcesSelected, handleSelectionChange } =
-    useIndexResourceState(campaigns);
+    useIndexResourceState(resources);
 
-  const filtered = campaigns.filter((c) =>
-    c.name.toLowerCase().includes(queryValue.toLowerCase()),
+  const filtered = resources.filter((r) =>
+    r.name.toLowerCase().includes(queryValue.toLowerCase()),
   );
 
   const handleQueryChange = useCallback(
@@ -213,7 +211,7 @@ export function CampaignTable({
         filters={[]}
       />
       <IndexTable
-        resourceName={{ singular: "campaign", plural: "campaigns" }}
+        resourceName={{ singular: "resource", plural: "resources" }}
         itemCount={filtered.length}
         selectedItemsCount={
           allResourcesSelected ? "All" : selectedResources.length
@@ -226,27 +224,25 @@ export function CampaignTable({
         headings={[
           { title: "Name" },
           { title: "Status" },
-          { title: "Affiliates" },
-          { title: "Commission" },
+          { title: "Items" },
+          { title: "Created" },
         ]}
       >
-        {filtered.map((campaign, index) => (
+        {filtered.map((resource, index) => (
           <IndexTable.Row
-            id={campaign.id}
-            key={campaign.id}
+            id={resource.id}
+            key={resource.id}
             position={index}
-            selected={selectedResources.includes(campaign.id)}
+            selected={selectedResources.includes(resource.id)}
           >
             <IndexTable.Cell>
-              <Text as="span" fontWeight="semibold">{campaign.name}</Text>
+              <Text as="span" fontWeight="semibold">{resource.name}</Text>
             </IndexTable.Cell>
             <IndexTable.Cell>
-              <StatusBadge status={campaign.status} />
+              <StatusBadge status={resource.status} />
             </IndexTable.Cell>
-            <IndexTable.Cell>{campaign.affiliateCount}</IndexTable.Cell>
-            <IndexTable.Cell>
-              <CurrencyText amount={campaign.totalCommission} />
-            </IndexTable.Cell>
+            <IndexTable.Cell>{resource.itemCount}</IndexTable.Cell>
+            <IndexTable.Cell>{resource.createdAt}</IndexTable.Cell>
           </IndexTable.Row>
         ))}
       </IndexTable>
@@ -309,7 +305,7 @@ export function AdminLayout({
 
 ### Pages — Remix routes, data fetching happens here
 ```
-Ví dụ: routes/app.campaigns.tsx, routes/app.settings.tsx
+Ví dụ: routes/app.resources.tsx, routes/app.settings.tsx
 
 Rules:
   - loader() fetch data via services/models
@@ -354,8 +350,8 @@ Reason: Bundle size constraint (< 15KB). Flat component structure:
 
 extensions/src/
 ├── components/
-│   ├── AffiliateWidget.tsx     # Self-contained
-│   └── ReferralBanner.tsx      # Self-contained
+│   ├── AppWidget.tsx          # Self-contained
+│   └── PromoBanner.tsx        # Self-contained
 ├── hooks/
 └── utils/
 

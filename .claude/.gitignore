@@ -1,0 +1,8 @@
+# Local settings (personal, không share)
+settings.local.json
+
+# Hook logs
+hooks/logs/
+
+# Hook local config overrides
+hooks/config/*.local.json

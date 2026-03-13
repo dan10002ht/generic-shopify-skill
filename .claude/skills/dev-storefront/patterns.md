@@ -6,33 +6,33 @@
 import { h, FunctionComponent } from "preact";
 import { signal } from "@preact/signals";
 
-interface AffiliateWidgetProps {
+interface AppWidgetProps {
   productId: string;
   shopDomain: string;
 }
 
 // Signals for shared state (outside component = singleton)
-const referralCode = signal<string | null>(null);
+const isVisible = signal(false);
 
-const AffiliateWidget: FunctionComponent<AffiliateWidgetProps> = ({
+const AppWidget: FunctionComponent<AppWidgetProps> = ({
   productId,
   shopDomain,
 }) => {
-  if (!referralCode.value) return null;
+  if (!isVisible.value) return null;
 
   return (
-    <div class="aff-widget">
-      <a
-        class="aff-widget__link"
-        href={`/products/${productId}?ref=${referralCode.value}`}
+    <div class="app-widget">
+      <button
+        class="app-widget__btn"
+        onClick={() => trackEvent("widget_click", { productId })}
       >
-        Share & Earn
-      </a>
+        Learn more
+      </button>
     </div>
   );
 };
 
-export default AffiliateWidget;
+export default AppWidget;
 ```
 
 ## 2. Signals State Management
@@ -41,28 +41,27 @@ export default AffiliateWidget;
 import { signal, computed, effect } from "@preact/signals";
 
 // Global store — singleton, shared across components
-export const affiliateStore = {
+export const appStore = {
   // State
-  code: signal<string | null>(null),
-  earnings: signal<number>(0),
+  settings: signal<Record<string, unknown> | null>(null),
   isLoading: signal(false),
+  userId: signal<string | null>(null),
 
   // Computed
-  hasCode: computed(() => affiliateStore.code.value !== null),
-  formattedEarnings: computed(
-    () => `$${affiliateStore.earnings.value.toFixed(2)}`
+  hasSettings: computed(() => appStore.settings.value !== null),
+  isReady: computed(
+    () => !appStore.isLoading.value && appStore.hasSettings.value
   ),
 
   // Actions
-  async fetchCode(customerId: string) {
-    affiliateStore.isLoading.value = true;
+  async fetchSettings(shopDomain: string) {
+    appStore.isLoading.value = true;
     try {
-      const res = await fetch(`/apps/affiliate/api/code?c=${customerId}`);
+      const res = await fetch(`/apps/proxy/api?action=get-settings&shop=${shopDomain}`);
       const data = await res.json();
-      affiliateStore.code.value = data.code;
-      affiliateStore.earnings.value = data.earnings;
+      appStore.settings.value = data.settings;
     } finally {
-      affiliateStore.isLoading.value = false;
+      appStore.isLoading.value = false;
     }
   },
 };
@@ -102,13 +101,13 @@ function lazyMount(
 
 // Usage — entry point
 lazyMount(
-  "[data-affiliate-widget]",
-  () => import("./components/AffiliateWidget"),
+  "[data-app-widget]",
+  () => import("./components/AppWidget"),
 );
 
 lazyMount(
-  "[data-referral-banner]",
-  () => import("./components/ReferralBanner"),
+  "[data-promo-banner]",
+  () => import("./components/PromoBanner"),
 );
 ```
 
@@ -116,20 +115,20 @@ lazyMount(
 
 ```liquid
 {% comment %}
-  blocks/affiliate-link.liquid
-  Renders an affiliate share button for logged-in customers
+  blocks/app-block.liquid
+  Renders an interactive widget for customers
 {% endcomment %}
 
 {% if customer %}
   <div
-    class="aff-block"
-    data-affiliate-widget
+    class="app-block"
+    data-app-widget
     data-props='{ "productId": "{{ product.id }}", "shopDomain": "{{ shop.domain }}" }'
   >
     {%- comment -%} Fallback content when JS is disabled {%- endcomment -%}
     <noscript>
-      <a href="/account" class="aff-block__fallback">
-        {{ block.settings.fallback_text | default: "Join our affiliate program" }}
+      <a href="/pages/info" class="app-block__fallback">
+        {{ block.settings.fallback_text | default: "Learn more" }}
       </a>
     </noscript>
   </div>
@@ -137,14 +136,14 @@ lazyMount(
 
 {% schema %}
 {
-  "name": "Affiliate Link",
+  "name": "App Widget",
   "target": "section",
   "settings": [
     {
       "type": "text",
       "id": "fallback_text",
       "label": "Fallback text (no JS)",
-      "default": "Join our affiliate program"
+      "default": "Learn more"
     },
     {
       "type": "select",
@@ -172,7 +171,7 @@ lazyMount(
 ```typescript
 // utils/api.ts — Lightweight fetch wrapper for storefront
 
-const PROXY_BASE = "/apps/affiliate/api";
+const PROXY_BASE = "/apps/proxy/api";
 
 interface FetchOptions {
   method?: "GET" | "POST";
@@ -201,13 +200,15 @@ export async function apiFetch<T>(
 }
 
 // Usage
-// const data = await apiFetch<{ code: string }>("/referral-code");
+// const data = await apiFetch<{ settings: object }>("/settings");
 ```
 
 ## 6. Tracking Pixel Pattern (Lightweight)
 
 ```typescript
 // Minimal tracking — no heavy analytics libraries
+const PROXY_BASE = "/apps/proxy/api";
+
 export function trackEvent(event: string, data?: Record<string, string>) {
   // Use sendBeacon for non-blocking, reliable delivery
   const payload = JSON.stringify({
@@ -230,20 +231,20 @@ export function trackEvent(event: string, data?: Record<string, string>) {
 }
 
 // Usage
-// trackEvent("affiliate_link_click", { productId: "123", code: "ABC" });
-// trackEvent("referral_banner_view");
+// trackEvent("widget_click", { productId: "123" });
+// trackEvent("banner_view", { page: "product" });
 ```
 
 ## 7. CSS Scoping Pattern
 
 ```css
 /*
- * affiliate-widget.css
- * Prefix ALL classes with "aff-" to prevent theme conflicts
- * BEM naming: aff-{block}__{element}--{modifier}
+ * app-widget.css
+ * Prefix ALL classes with "app-" to prevent theme conflicts
+ * BEM naming: app-{block}__{element}--{modifier}
  */
 
-.aff-widget {
+.app-widget {
   /* Reset — don't inherit theme styles */
   all: initial;
   display: block;
@@ -251,7 +252,7 @@ export function trackEvent(event: string, data?: Record<string, string>) {
   color: inherit;
 }
 
-.aff-widget__link {
+.app-widget__btn {
   display: inline-flex;
   align-items: center;
   gap: 0.5em;
@@ -262,22 +263,24 @@ export function trackEvent(event: string, data?: Record<string, string>) {
   color: inherit;
   font-size: 0.875rem;
   transition: opacity 0.15s ease;
+  cursor: pointer;
+  background: transparent;
 }
 
-.aff-widget__link:hover {
+.app-widget__btn:hover {
   opacity: 0.8;
 }
 
 /* Use CSS custom properties for merchant theming */
-.aff-widget--themed {
-  --aff-accent: var(--aff-merchant-color, #4A90D9);
-  border-color: var(--aff-accent);
-  color: var(--aff-accent);
+.app-widget--themed {
+  --app-accent: var(--app-merchant-color, #4A90D9);
+  border-color: var(--app-accent);
+  color: var(--app-accent);
 }
 
 /* Responsive — mobile first */
 @media (max-width: 749px) {
-  .aff-widget__link {
+  .app-widget__btn {
     width: 100%;
     justify-content: center;
   }
@@ -292,17 +295,17 @@ import { lazyMount } from "./utils/lazy-mount";
 
 // Lazy load everything — nothing eager except the mount logic
 lazyMount(
-  "[data-affiliate-widget]",
-  () => import("./components/AffiliateWidget"),
+  "[data-app-widget]",
+  () => import("./components/AppWidget"),
 );
 
 lazyMount(
-  "[data-referral-banner]",
-  () => import("./components/ReferralBanner"),
+  "[data-promo-banner]",
+  () => import("./components/PromoBanner"),
 );
 
 // Initialize tracking only if elements exist
-if (document.querySelector("[data-aff-track]")) {
+if (document.querySelector("[data-app-track]")) {
   import("./utils/tracking").then(({ initTracking }) => initTracking());
 }
 ```
@@ -321,7 +324,7 @@ export default defineConfig({
     lib: {
       entry: "extensions/src/index.tsx",
       formats: ["es"],
-      fileName: "affiliate-widget",
+      fileName: "app-widget",
     },
     rollupOptions: {
       output: {

@@ -102,16 +102,16 @@ BfS badge = highest quality tier trên Shopify App Store. Mọi feature phải t
 ```
 Rule: Request MINIMUM scopes cần thiết
 
-✅ Affiliate app likely needs:
-  - read_products          (browse products for campaigns)
-  - read_orders            (track affiliate conversions)
-  - read_customers         (identify affiliate partners)
-  - write_customers        (write affiliate metafields)
+✅ Typical Shopify app scopes:
+  - read_products          (access product data)
+  - read_orders            (access order data)
+  - read_customers         (access customer data)
+  - write_customers        (update customer metafields)
   - read_themes            (Theme App Extension check)
 
 ❌ KHÔNG request nếu không cần:
-  - write_orders           (chỉ cần read cho tracking)
-  - write_products         (trừ khi modify product data)
+  - write_orders           (chỉ cần nếu modify orders)
+  - write_products         (chỉ cần nếu modify product data)
   - read_all_orders        (chỉ cần nếu access orders > 60 days)
   - write_themes           (Theme App Extension tự handle)
 ```

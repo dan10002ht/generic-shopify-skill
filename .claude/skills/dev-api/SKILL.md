@@ -36,17 +36,17 @@ argument-hint: [API endpoint hoặc backend feature]
 ```
 app/
 ├── models/              # Prisma helper functions (data access layer)
-│   ├── campaign.server.ts
-│   ├── affiliate.server.ts
-│   └── commission.server.ts
+│   ├── product.server.ts
+│   ├── order.server.ts
+│   └── setting.server.ts
 ├── services/            # Business logic layer
-│   ├── commission.server.ts
-│   ├── tracking.server.ts
-│   └── payout.server.ts
+│   ├── order-processing.server.ts
+│   ├── sync.server.ts
+│   └── notification.server.ts
 ├── jobs/                # BullMQ job definitions
 │   ├── queue.server.ts       # Queue setup
-│   ├── processWebhook.ts
-│   └── calculateCommission.ts
+│   ├── processOrder.ts
+│   └── syncInventory.ts
 ├── utils/
 │   ├── validation.server.ts  # Zod schemas
 │   └── errors.server.ts      # Custom error classes
@@ -73,8 +73,7 @@ Xem chi tiết tại [patterns.md](patterns.md) bao gồm:
 - Rate limiting pattern
 - App Proxy endpoint pattern
 - Transaction pattern (Prisma)
-- Soft delete pattern
-- Audit log pattern
+- Structured logging pattern
 
 ## Prisma Schema Conventions
 
@@ -84,17 +83,16 @@ Xem chi tiết tại [patterns.md](patterns.md) bao gồm:
 // Soft delete qua deletedAt
 // Shop relation bắt buộc (multi-tenant)
 
-model Campaign {
+model Resource {
   id          String    @id @default(cuid())
   shop        String    // Shopify shop domain (tenant key)
   name        String
   slug        String
-  status      CampaignStatus @default(DRAFT)
-  commissionRate Decimal @db.Decimal(5, 2)
+  status      ResourceStatus @default(DRAFT)
+  description String?
 
   // Relations
-  affiliates  Affiliate[]
-  commissions Commission[]
+  items       Item[]
 
   // Timestamps
   createdAt   DateTime  @default(now())
@@ -107,7 +105,7 @@ model Campaign {
   @@index([deletedAt])
 }
 
-enum CampaignStatus {
+enum ResourceStatus {
   DRAFT
   ACTIVE
   PAUSED
@@ -136,7 +134,7 @@ enum CampaignStatus {
 - KHÔNG trust client-side data — validate lại server-side
 - KHÔNG `console.log` trong production — dùng structured logger
 - KHÔNG skip HMAC validation cho webhooks
-- KHÔNG hard-delete data liên quan đến commissions/payments
+- KHÔNG hard-delete data liên quan đến orders/payments
 - KHÔNG store secrets trong code — dùng environment variables
 - KHÔNG dùng `any` type cho API responses
 
